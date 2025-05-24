@@ -47,7 +47,7 @@ def main(args):
     model.load_state_dict(state_dict)
     model.eval()
     
-    vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-mse").to(device)
+    vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-ema").to(device)
     assert args.cfg_scale >= 1.0, "In almost all cases, cfg_scale should be >= 1.0"
 
     # Create folder to save samples:

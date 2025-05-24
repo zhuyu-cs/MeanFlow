@@ -59,7 +59,7 @@ accelerate launch --multi_gpu \
     --time-sampler "logit_normal" \
     --time-mu -0.4 \
     --time-sigma 1.0 \
-    --ratio-r-not-equal-t 0.75 \
+    --ratio-r-not-equal-t 0.25 \
     --adaptive-p 1.0 \
     --cfg-omega 1.0 \
     --cfg-kappa 0.5\
@@ -82,7 +82,7 @@ accelerate launch --multi_gpu \
     --time-sampler "logit_normal" \
     --time-mu -0.4 \
     --time-sigma 1.0 \
-    --ratio-r-not-equal-t 0.75 \
+    --ratio-r-not-equal-t 0.25 \
     --adaptive-p 1.0 \
     --cfg-omega 0.2 \
     --cfg-kappa 0.92\
@@ -105,7 +105,7 @@ accelerate launch --multi_gpu \
     --time-sampler "logit_normal" \
     --time-mu -0.4 \
     --time-sigma 1.0 \
-    --ratio-r-not-equal-t 0.75 \
+    --ratio-r-not-equal-t 0.25 \
     --adaptive-p 1.0 \
     --cfg-omega 0.2 \
     --cfg-kappa 0.92\

@@ -116,7 +116,7 @@ def preprocess_latents(args):
     np.random.seed(args.seed + rank)
     cudnn.benchmark = True
     
-    vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-mse").to(device)
+    vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-ema").to(device)
     vae.eval()
     
     transform = transforms.Compose([

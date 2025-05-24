@@ -133,6 +133,7 @@ def main(args):
         time_mu=args.time_mu,
         time_sigma=args.time_sigma,
         ratio_r_not_equal_t=args.ratio_r_not_equal_t,
+        label_dropout_prob=args.cfg_prob,
         adaptive_p=args.adaptive_p,
         cfg_omega=args.cfg_omega,
         cfg_kappa=args.cfg_kappa,

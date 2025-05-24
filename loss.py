@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-import torch.nn.functional as F
 import torch.func
 
 def mean_flat(x):
@@ -9,16 +8,9 @@ def mean_flat(x):
     """
     return torch.mean(x, dim=list(range(1, len(x.size()))))
 
-def sum_flat(x):
-    """
-    Take the sum over all non-batch dimensions.
-    """
-    return torch.sum(x, dim=list(range(1, len(x.size()))))
-
 class SILoss:
     def __init__(
             self,
-            prediction='v',
             path_type="linear",
             weighting="uniform",
             # New parameters
@@ -27,13 +19,13 @@ class SILoss:
             time_sigma=1.0,               # Std parameter for logit_normal distribution
             ratio_r_not_equal_t=0.75,     # Ratio of samples where r≠t
             adaptive_p=1.0,               # Power param for adaptive weighting
+            label_dropout_prob=0.0,       # Drop out label
             # CFG related params
             cfg_omega=1.0,                # CFG omega param, default 1.0 means no CFG
             cfg_kappa=0.0,                # CFG kappa param for mixing class-cond and uncond u
             cfg_min_t=0.0,                # Minum CFG trigger time 
             cfg_max_t=0.8,                # Maxium CFG trigger time
             ):
-        self.prediction = prediction
         self.weighting = weighting
         self.path_type = path_type
         
@@ -42,7 +34,7 @@ class SILoss:
         self.time_mu = time_mu
         self.time_sigma = time_sigma
         self.ratio_r_not_equal_t = ratio_r_not_equal_t
-        
+        self.label_dropout_prob = label_dropout_prob
         # Adaptive weight config
         self.adaptive_p = adaptive_p
         
@@ -86,7 +78,7 @@ class SILoss:
         r, t = sorted_samples[:, 0], sorted_samples[:, 1]
         
         # Step3: Control the proportion of r=t samples
-        fraction_equal = 1.0 - self.ratio_r_not_equal_t  # e.g., 0.25 means 25% of samples have r=t
+        fraction_equal = 1.0 - self.ratio_r_not_equal_t  # e.g., 0.75 means 75% of samples have r=t
         # Create a mask for samples where r should equal t
         equal_mask = torch.rand(batch_size, device=device) < fraction_equal
         # Apply the mask: where equal_mask is True, set r=t (replace)
@@ -100,10 +92,27 @@ class SILoss:
         """
         if model_kwargs == None:
             model_kwargs = {}
+        else:
+            model_kwargs = model_kwargs.copy()
 
         batch_size = images.shape[0]
         device = images.device
         
+        if hasattr(model, "module"):
+            inner_model = model.module
+        else:
+            inner_model = model
+
+        if model_kwargs.get('y') is not None and self.label_dropout_prob > 0:
+            y = model_kwargs['y'].clone()  
+            batch_size = y.shape[0]
+            num_classes = inner_model.num_classes
+            dropout_mask = torch.rand(batch_size, device=y.device) < self.label_dropout_prob
+            
+            y[dropout_mask] = num_classes
+        
+            model_kwargs['y'] = y
+
         # Sample time steps
         r, t = self.sample_time_steps(batch_size, device)
 
@@ -116,12 +125,6 @@ class SILoss:
         
         # Calculate instantaneous velocity v_t 
         v_t = d_alpha_t * images + d_sigma_t * noises
-        
-        # Get inner model for JVP computation
-        if hasattr(model, "module"):
-            inner_model = model.module
-        else:
-            inner_model = model
         
         # Define function for JVP computation
         def fn(z, cur_r, cur_t):
@@ -178,3 +181,6 @@ class SILoss:
             loss = mean_flat(error ** 2)
         
         return loss
+
+
+
