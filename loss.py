@@ -19,12 +19,12 @@ class SILoss:
             time_sigma=1.0,               # Std parameter for logit_normal distribution
             ratio_r_not_equal_t=0.75,     # Ratio of samples where r≠t
             adaptive_p=1.0,               # Power param for adaptive weighting
-            label_dropout_prob=0.0,       # Drop out label
+            label_dropout_prob=0.1,       # Drop out label
             # CFG related params
             cfg_omega=1.0,                # CFG omega param, default 1.0 means no CFG
             cfg_kappa=0.0,                # CFG kappa param for mixing class-cond and uncond u
-            cfg_min_t=0.0,                # Minum CFG trigger time 
-            cfg_max_t=0.8,                # Maxium CFG trigger time
+            cfg_min_t=0.0,                # Minium CFG trigger time 
+            cfg_max_t=0.8,                # Maximum CFG trigger time
             ):
         self.weighting = weighting
         self.path_type = path_type
@@ -86,7 +86,7 @@ class SILoss:
         
         return r, t
 
-    def __call__(self, model, images, model_kwargs=None):
+    def __call__(self, model, ema_model, images, model_kwargs=None):
         """
         Compute MeanFlow loss function
         """
@@ -97,16 +97,11 @@ class SILoss:
 
         batch_size = images.shape[0]
         device = images.device
-        
-        if hasattr(model, "module"):
-            inner_model = model.module
-        else:
-            inner_model = model
 
         if model_kwargs.get('y') is not None and self.label_dropout_prob > 0:
             y = model_kwargs['y'].clone()  
             batch_size = y.shape[0]
-            num_classes = inner_model.num_classes
+            num_classes = ema_model.num_classes
             dropout_mask = torch.rand(batch_size, device=y.device) < self.label_dropout_prob
             
             y[dropout_mask] = num_classes
@@ -128,13 +123,13 @@ class SILoss:
         
         # Define function for JVP computation
         def fn(z, cur_r, cur_t):
-            return inner_model(z, cur_r, cur_t, **model_kwargs)
+            return ema_model(z, cur_r, cur_t, **model_kwargs)
         
         # Compute u and du/dt using JVP
         primals = (z_t, r, t)
         tangents = (v_t, torch.zeros_like(r), torch.ones_like(t))
-        u, dudt = torch.func.jvp(fn, primals, tangents)
-        
+        _, dudt = torch.func.jvp(fn, primals, tangents) # ema model for gt
+        u = model(z_t, r, t, **model_kwargs)
         # Calculate MeanFlow target
         time_diff = (t - r).view(-1, 1, 1, 1)
         
@@ -146,7 +141,7 @@ class SILoss:
         if model_kwargs.get('y') is not None and cfg_time_mask.any():
             y = model_kwargs['y']
             batch_size = y.shape[0]
-            num_classes = inner_model.num_classes
+            num_classes = ema_model.num_classes
 
             z_t_batch = torch.cat([z_t, z_t], dim=0)
             t_batch = torch.cat([t, t], dim=0)
@@ -155,7 +150,7 @@ class SILoss:
             combined_kwargs = model_kwargs.copy()
             combined_kwargs['y'] = y_batch
             with torch.no_grad():
-                combined_u_at_t = inner_model(z_t_batch, t_batch, t_end_batch, **combined_kwargs)
+                combined_u_at_t = ema_model(z_t_batch, t_batch, t_end_batch, **combined_kwargs)
                 # u_θ^cfg(z_t, t, t|c), class-conditional; u_θ^cfg(z_t, t, t), class-unconditional
                 u_cond_at_t, u_uncond_at_t = torch.chunk(combined_u_at_t, 2, dim=0)
                 # Eq-21：ṽ_t = ω * v_t + κ * u_θ^cfg(z_t, t, t | c) + (1-ω-κ) * u_θ^cfg(z_t, t, t)
@@ -181,6 +176,3 @@ class SILoss:
             loss = mean_flat(error ** 2)
         
         return loss
-
-
-

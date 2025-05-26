@@ -213,7 +213,7 @@ def main(args):
             
             with accelerator.accumulate(model):
                 model_kwargs = dict(y=labels)
-                loss = loss_fn(model, x, model_kwargs)
+                loss = loss_fn(model, ema, x, model_kwargs)
                 loss_mean = loss.mean()
                 loss = loss_mean
                     
