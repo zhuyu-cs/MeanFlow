@@ -91,8 +91,13 @@ def main(args):
                 cfg_scale=args.cfg_scale,
                 num_steps=args.num_steps,
             ).to(torch.float32)
-
-            samples = vae.decode(samples / 0.18215).sample
+            latents_scale = 0.5 / torch.tensor(
+                [4.85503674, 5.31922414, 3.93725398 , 3.9870003 ]
+                ).view(1, 4, 1, 1).to(device)
+            latents_bias = - torch.tensor(
+                [0.86488,    -0.27787343,  0.21616915,  0.3738409 ]
+                ).view(1, 4, 1, 1).to(device) * latents_scale 
+            samples = vae.decode((samples -  latents_bias) / latents_scale).sample
             samples = (samples + 1) / 2.
             samples = torch.clamp(
                 255. * samples, 0, 255

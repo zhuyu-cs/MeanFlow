@@ -1,5 +1,6 @@
 
 import argparse
+import copy
 from copy import deepcopy
 import logging
 import os
@@ -7,10 +8,13 @@ from pathlib import Path
 from collections import OrderedDict
 import json
 
+import numpy as np
 import torch
 import torch.nn.functional as F
+import torch.utils.checkpoint
 from tqdm.auto import tqdm
 from torch.utils.data import DataLoader
+from torchvision.utils import make_grid
 
 from accelerate import Accelerator
 from accelerate.logging import get_logger
@@ -21,9 +25,18 @@ from loss import SILoss
 
 from dataset import LMDBLatentsDataset
 from diffusers.models.autoencoders.vae import DiagonalGaussianDistribution
-
+import math
 
 logger = get_logger(__name__)
+
+
+def array2grid(x):
+    nrow = round(math.sqrt(x.size(0)))
+    x = make_grid(x.clamp(0, 1), nrow=nrow, value_range=(0, 1))
+    x = x.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
+    return x
+
+
 
 @torch.no_grad()
 def update_ema(ema_model, model, decay=0.9999):
@@ -126,19 +139,19 @@ def main(args):
     
     # Create loss function with all MeanFlow parameters
     loss_fn = SILoss(
-        prediction=args.prediction,
         path_type=args.path_type, 
         # Add MeanFlow specific parameters
         time_sampler=args.time_sampler,
         time_mu=args.time_mu,
         time_sigma=args.time_sigma,
         ratio_r_not_equal_t=args.ratio_r_not_equal_t,
-        label_dropout_prob=args.cfg_prob,
         adaptive_p=args.adaptive_p,
+        label_dropout_prob=args.cfg_prob,
         cfg_omega=args.cfg_omega,
         cfg_kappa=args.cfg_kappa,
         cfg_min_t=args.cfg_min_t,
         cfg_max_t=args.cfg_max_t,
+        bootstrap_ratio=args.bootstrap_ratio
     )
     if accelerator.is_main_process:
         logger.info(f"SiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -200,7 +213,13 @@ def main(args):
         # Only show the progress bar once on each machine.
         disable=not accelerator.is_local_main_process,
     )
-        
+    # here is a trick from IMM. https://github.com/lumalabs/imm/blob/main/training/encoders.py
+    latents_scale = 0.5 / torch.tensor(
+        [4.85503674, 5.31922414, 3.93725398 , 3.9870003 ]
+        ).view(1, 4, 1, 1).to(device)
+    latents_bias = - torch.tensor(
+        [0.86488, -0.27787343,  0.21616915,  0.3738409 ]
+        ).view(1, 4, 1, 1).to(device) * latents_scale 
     for epoch in range(args.epochs):
         model.train()
         for moments, labels in train_dataloader:
@@ -209,7 +228,8 @@ def main(args):
 
             with torch.no_grad():
                 posterior = DiagonalGaussianDistribution(moments)
-                x = posterior.sample().mul_(0.18215)
+                x = posterior.sample()
+                x = x * latents_scale + latents_bias
             
             with accelerator.accumulate(model):
                 model_kwargs = dict(y=labels)
@@ -263,7 +283,7 @@ def main(args):
             
         if global_step >= args.max_train_steps:
             break
-
+    
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
         logger.info("Training completed!")
@@ -312,7 +332,6 @@ def parse_args(input_args=None):
 
     # basic loss
     parser.add_argument("--path-type", type=str, default="linear", choices=["linear", "cosine"])
-    parser.add_argument("--prediction", type=str, default="v", choices=["v"]) # currently we only support v-prediction
     parser.add_argument("--cfg-prob", type=float, default=0.1)
     parser.add_argument("--weighting", default="adaptive", type=str, choices=["uniform", "adaptive"], help="Loss weighting type")
     
@@ -327,6 +346,8 @@ def parse_args(input_args=None):
     parser.add_argument("--cfg-kappa", type=float, default=0.0, help="CFG kappa param for mixing")
     parser.add_argument("--cfg-min-t", type=float, default=0.0, help="Minum time for cfg trigger")
     parser.add_argument("--cfg-max-t", type=float, default=1.0, help="Maxium time for cfg trigger")
+    parser.add_argument("--bootstrap-ratio", type=float, default=0.75, help="Ratio of EMA gt")
+    
     if input_args is not None:
         args = parser.parse_args(input_args)
     else:
