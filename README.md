@@ -45,7 +45,7 @@ We provide training commands for different model sizes (B, L, XL) with optimized
 
 torchrun --nproc_per_node=8 \
     train.py \
-    --exp-name "meanflow_b_4_jaxvae" \
+    --exp-name "meanflow_b_4" \
     --output-dir "work_dir" \
     --data-dir "/data/train_vae_latents_lmdb" \
     --model "SiT-B/4" \
