@@ -47,7 +47,7 @@ torchrun --nproc_per_node=8 \
     train.py \
     --exp-name "meanflow_b_4_jaxvae" \
     --output-dir "work_dir" \
-    --data-dir "/data/dataset/train_jaxvae_latents_lmdb" \
+    --data-dir "/data/train_vae_latents_lmdb" \
     --model "SiT-B/4" \
     --resolution 256 \
     --batch-size 256 \
@@ -61,8 +61,8 @@ torchrun --nproc_per_node=8 \
     --time-sigma 1.0 \
     --ratio-r-not-equal-t 0.25 \
     --adaptive-p 1.0 \
-    --cfg-omega 1.0 \
-    --cfg-kappa 0.5\
+    --cfg-omega 3.0 \
+    --cfg-kappa 0.\
     --cfg-min-t 0.0\
     --cfg-max-t 1.0\
     --bootstrap-ratio 0.
@@ -89,7 +89,7 @@ torchrun --nproc_per_node=8 \
     --cfg-kappa 0.5\
     --cfg-min-t 0.0\
     --cfg-max-t 1.0\
-    --bootstrap-ratio 0.25
+    --bootstrap-ratio 0.
 
 torchrun --nproc_per_node=8 \
     train.py \
@@ -113,7 +113,7 @@ torchrun --nproc_per_node=8 \
     --cfg-kappa 0.92\
     --cfg-min-t 0.0\
     --cfg-max-t 0.8\
-    --bootstrap-ratio 0.25
+    --bootstrap-ratio 0.
 
 ```
 Each configuration is optimized for different model sizes according to the original paper's settings.
