@@ -90,7 +90,7 @@ class SILoss:
         r = torch.where(equal_mask, t, r)
         
         return r, t
-
+    
     def __call__(self, model, ema_model, images, model_kwargs=None):
         """
         Compute MeanFlow loss function with bootstrap mechanism
@@ -119,7 +119,7 @@ class SILoss:
         
         # Calculate interpolation and z_t
         alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(t.view(-1, 1, 1, 1))
-        z_t = alpha_t * images + sigma_t * noises
+        z_t = alpha_t * images + sigma_t * noises #(1-t) * images + t * noise
         
         # Calculate instantaneous velocity v_t 
         v_t = d_alpha_t * images + d_sigma_t * noises
@@ -131,7 +131,7 @@ class SILoss:
         
         u = model(z_t, r, t, **model_kwargs)
         
-        # Process bootstrap samples (like, shotcut model.)
+        # Process bootstrap samples (using EMA model)
         if bootstrap_size > 0:
             ema_indices = torch.arange(bootstrap_size, device=device)
             
@@ -151,19 +151,12 @@ class SILoss:
             def fn_ema(z, cur_r, cur_t):
                 return ema_model(z, cur_r, cur_t, **ema_kwargs)
             
-            # Compute JVP with EMA model
-            primals = (ema_z_t, ema_r, ema_t)
-            tangents = (ema_v_t, torch.zeros_like(ema_r), torch.ones_like(ema_t))
-            _, ema_dudt = torch.func.jvp(fn_ema, primals, tangents)
-            
-            # Calculate bootstrap target
-            ema_u_target = ema_v_t - ema_time_diff * ema_dudt
-            
-            # Apply CFG if needed for bootstrap samples
+            # Check if CFG should be applied
             ema_cfg_time_mask = (ema_t >= self.cfg_min_t) & (ema_t <= self.cfg_max_t)
+            
             if model_kwargs.get('y') is not None and ema_cfg_time_mask.any():
+                # Compute v_tilde for CFG samples
                 ema_y = ema_kwargs.get('y')
-                ema_batch_size = ema_y.shape[0]
                 num_classes = ema_model.num_classes
                 
                 ema_z_t_batch = torch.cat([ema_z_t, ema_z_t], dim=0)
@@ -178,15 +171,30 @@ class SILoss:
                     ema_combined_u_at_t = ema_model(ema_z_t_batch, ema_t_batch, ema_t_end_batch, **ema_combined_kwargs)
                     ema_u_cond_at_t, ema_u_uncond_at_t = torch.chunk(ema_combined_u_at_t, 2, dim=0)
                     ema_v_tilde = (self.cfg_omega * ema_v_t + 
-                               self.cfg_kappa * ema_u_cond_at_t + 
-                               (1 - self.cfg_omega - self.cfg_kappa) * ema_u_uncond_at_t)
+                            self.cfg_kappa * ema_u_cond_at_t + 
+                            (1 - self.cfg_omega - self.cfg_kappa) * ema_u_uncond_at_t)
                 
-                ema_u_target_cfg = ema_v_tilde - ema_time_diff * ema_dudt
-                ema_u_target = torch.where(ema_cfg_time_mask.view(-1, 1, 1, 1), ema_u_target_cfg, ema_u_target)
+                # Use v_tilde for JVP where CFG is active, v_t otherwise
+                ema_v_for_jvp = torch.where(ema_cfg_time_mask.view(-1, 1, 1, 1), ema_v_tilde, ema_v_t)
+                
+                # Compute JVP with appropriate velocity
+                primals = (ema_z_t, ema_r, ema_t)
+                tangents = (ema_v_for_jvp, torch.zeros_like(ema_r), torch.ones_like(ema_t))
+                _, ema_dudt = torch.func.jvp(fn_ema, primals, tangents)
+                
+                # Calculate target
+                ema_u_target = ema_v_for_jvp - ema_time_diff * ema_dudt
+            else:
+                # No CFG, use standard JVP
+                primals = (ema_z_t, ema_r, ema_t)
+                tangents = (ema_v_t, torch.zeros_like(ema_r), torch.ones_like(ema_t))
+                _, ema_dudt = torch.func.jvp(fn_ema, primals, tangents)
+                
+                ema_u_target = ema_v_t - ema_time_diff * ema_dudt
             
             u_target[ema_indices] = ema_u_target
         
-        # Process flow samples (use current model for GT)
+        # Process non-bootstrap samples (using current model)
         if batch_size > bootstrap_size:
             non_ema_indices = torch.arange(bootstrap_size, batch_size, device=device)
             
@@ -206,18 +214,12 @@ class SILoss:
             def fn_current(z, cur_r, cur_t):
                 return model(z, cur_r, cur_t, **non_ema_kwargs)
             
-            # Compute JVP with current model
-            primals = (non_ema_z_t, non_ema_r, non_ema_t)
-            tangents = (non_ema_v_t, torch.zeros_like(non_ema_r), torch.ones_like(non_ema_t))
-            _, non_ema_dudt = torch.func.jvp(fn_current, primals, tangents)
-            
-            non_ema_u_target = non_ema_v_t - non_ema_time_diff * non_ema_dudt
-            
-            # Apply CFG if needed for flow samples
+            # Check if CFG should be applied
             non_ema_cfg_time_mask = (non_ema_t >= self.cfg_min_t) & (non_ema_t <= self.cfg_max_t)
+            
             if model_kwargs.get('y') is not None and non_ema_cfg_time_mask.any():
+                # Compute v_tilde for CFG samples
                 non_ema_y = non_ema_kwargs.get('y')
-                non_ema_batch_size = non_ema_y.shape[0]
                 num_classes = ema_model.num_classes
                 
                 non_ema_z_t_batch = torch.cat([non_ema_z_t, non_ema_z_t], dim=0)
@@ -232,11 +234,26 @@ class SILoss:
                     non_ema_combined_u_at_t = model(non_ema_z_t_batch, non_ema_t_batch, non_ema_t_end_batch, **non_ema_combined_kwargs)
                     non_ema_u_cond_at_t, non_ema_u_uncond_at_t = torch.chunk(non_ema_combined_u_at_t, 2, dim=0)
                     non_ema_v_tilde = (self.cfg_omega * non_ema_v_t + 
-                               self.cfg_kappa * non_ema_u_cond_at_t + 
-                               (1 - self.cfg_omega - self.cfg_kappa) * non_ema_u_uncond_at_t)
+                            self.cfg_kappa * non_ema_u_cond_at_t + 
+                            (1 - self.cfg_omega - self.cfg_kappa) * non_ema_u_uncond_at_t)
                 
-                non_ema_u_target_cfg = non_ema_v_tilde - non_ema_time_diff * non_ema_dudt
-                non_ema_u_target = torch.where(non_ema_cfg_time_mask.view(-1, 1, 1, 1), non_ema_u_target_cfg, non_ema_u_target)
+                # Use v_tilde for JVP where CFG is active, v_t otherwise
+                non_ema_v_for_jvp = torch.where(non_ema_cfg_time_mask.view(-1, 1, 1, 1), non_ema_v_tilde, non_ema_v_t)
+                
+                # Compute JVP with appropriate velocity
+                primals = (non_ema_z_t, non_ema_r, non_ema_t)
+                tangents = (non_ema_v_for_jvp, torch.zeros_like(non_ema_r), torch.ones_like(non_ema_t))
+                _, non_ema_dudt = torch.func.jvp(fn_current, primals, tangents)
+                
+                # Calculate target
+                non_ema_u_target = non_ema_v_for_jvp - non_ema_time_diff * non_ema_dudt
+            else:
+                # No CFG, use standard JVP
+                primals = (non_ema_z_t, non_ema_r, non_ema_t)
+                tangents = (non_ema_v_t, torch.zeros_like(non_ema_r), torch.ones_like(non_ema_t))
+                _, non_ema_dudt = torch.func.jvp(fn_current, primals, tangents)
+                
+                non_ema_u_target = non_ema_v_t - non_ema_time_diff * non_ema_dudt
             
             u_target[non_ema_indices] = non_ema_u_target
         
@@ -249,7 +266,7 @@ class SILoss:
         if self.weighting == "adaptive":
             epsilon = 1e-3
             weights = 1.0 / (torch.norm(error.reshape(error.shape[0], -1), dim=1) ** 2 + epsilon) ** self.adaptive_p
-            loss = torch.mean(weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).detach() * error ** 2)
+            loss = mean_flat(weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).detach() * error ** 2)
         else:
             loss = mean_flat(error ** 2)
         

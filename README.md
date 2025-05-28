@@ -43,7 +43,31 @@ We provide training commands for different model sizes (B, L, XL) with optimized
 
 ```bash
 
-accelerate launch --multi_gpu \
+torchrun --nproc_per_node=8 \
+    train.py \
+    --exp-name "meanflow_b_4_jaxvae" \
+    --output-dir "work_dir" \
+    --data-dir "/data/dataset/train_jaxvae_latents_lmdb" \
+    --model "SiT-B/4" \
+    --resolution 256 \
+    --batch-size 256 \
+    --allow-tf32 \
+    --mixed-precision "bf16" \
+    --epochs 80\
+    --path-type "linear" \
+    --weighting "adaptive" \
+    --time-sampler "logit_normal" \
+    --time-mu -0.4 \
+    --time-sigma 1.0 \
+    --ratio-r-not-equal-t 0.25 \
+    --adaptive-p 1.0 \
+    --cfg-omega 1.0 \
+    --cfg-kappa 0.5\
+    --cfg-min-t 0.0\
+    --cfg-max-t 1.0\
+    --bootstrap-ratio 0.
+
+torchrun --nproc_per_node=8 \
     train.py \
     --exp-name "meanflow_b_2" \
     --output-dir "exp" \
@@ -52,7 +76,7 @@ accelerate launch --multi_gpu \
     --resolution 256 \
     --batch-size 256 \
     --allow-tf32 \
-    --mixed-precision "no" \
+    --mixed-precision "bf16" \
     --epochs 240\
     --path-type "linear" \
     --weighting "adaptive" \
@@ -67,7 +91,7 @@ accelerate launch --multi_gpu \
     --cfg-max-t 1.0\
     --bootstrap-ratio 0.25
 
-accelerate launch --multi_gpu \
+torchrun --nproc_per_node=8 \
     train.py \
     --exp-name "meanflow_l_2" \
     --output-dir "exp" \
@@ -76,7 +100,7 @@ accelerate launch --multi_gpu \
     --resolution 256 \
     --batch-size 256 \
     --allow-tf32 \
-    --mixed-precision "no" \
+    --mixed-precision "bf16" \
     --epochs 240\
     --path-type "linear" \
     --weighting "adaptive" \
