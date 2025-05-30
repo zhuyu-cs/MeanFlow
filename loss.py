@@ -264,9 +264,9 @@ class SILoss:
         
         # Apply adaptive weighting based on configuration
         if self.weighting == "adaptive":
-            epsilon = 1e-3
-            weights = 1.0 / (torch.norm(error.reshape(error.shape[0], -1), dim=1) ** 2 + epsilon) ** self.adaptive_p
-            loss = mean_flat(weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).detach() * error ** 2)
+            error_norm = torch.norm(error.reshape(error.shape[0], -1), dim=1)
+            weights = 1.0 / (error_norm.detach() ** 2 + 1e-3).pow(self.adaptive_p)
+            loss = mean_flat(weights * error_norm ** 2)
         else:
             loss = mean_flat(error ** 2)
         
