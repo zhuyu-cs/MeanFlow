@@ -7,48 +7,6 @@ MeanFlow introduces a principled framework for one-step generative modeling by i
 
 Built on the [SiT](https://github.com/willisma/SiT/tree/main) architecture, this implementation focuses on reproducing the original paper's efficient generation capabilities.
 
-## ⚠️ Critical Implementation Detail: Loss Function
-
-**This significantly impacts performance!**
-
-The MeanFlow paper's mathematical notation can be misleading when implementing the loss function. We clarify the exact implementation used in this codebase:
-
-### Squared 2-Norm vs Squared L2 Loss
-
-The paper writes the loss as $L = ||\Delta||^2_2$ where $\Delta = u_\theta - u_{tgt}$. This is **NOT** the standard "squared L2 loss" but rather the **squared 2-norm**:
-
-**Correct Understanding:**
-- $||\Delta||_2$ = 2-norm = $\sqrt{\sum_i \Delta_i^2}$
-- $||\Delta||^2_2$ = squared 2-norm = $\sum_i \Delta_i^2$
-
-**Common Confusion:**
-- "Squared L2 loss" typically refers to MSE: $\frac{1}{N} \sum_i \Delta_i^2$
-- "L2 loss" and "MSE" are indeed equivalent in standard ML terminology
-
-
-**Critical Implementation Difference**
-
-```python
-# CORRECT: Squared 2-norm per sample, then mean over batch
-delta = u_pred - u_target  # Shape: [B, C, H, W]
-loss = torch.sum(delta**2, dim=[1,2,3])  # Shape: [B], sum over C,H,W
-loss = torch.mean(loss)  # Mean over batch dimension
-
-# WRONG: Mean over all dimensions (standard MSE or L2 loss)
-loss = torch.mean(delta**2)  # Mean over ALL elements
-# OR
-loss = F.mse_loss(u_pred, u_target)  
-```
-
-**Performance Impact**
-
-| Implementation | FID (SiT-B/4, no cfg) | Gradient Scale |
-|---------------|----------------|----------------|
-| Correct (sum over spatial) |63 (61.06,Table 1f) | 1x |
-| Wrong (MSE over all)|99.19| 1/(C×H×W) |
-
-
-
 ## Installation
 
 ```bash
@@ -136,6 +94,7 @@ torchrun --nproc_per_node=8 evaluate.py \
 |---------------|----------------|
 | 150k |8.39|
 | 200k|6.15|
+| 250k|5.57|
 | 800k|*training*|
 
 
