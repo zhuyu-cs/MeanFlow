@@ -2,12 +2,6 @@ import torch
 import numpy as np
 import torch.func
 
-def mean_flat(x):
-    """
-    Take the mean over all non-batch dimensions.
-    """
-    return torch.mean(x, dim=list(range(1, len(x.size()))))
-
 class SILoss:
     def __init__(
             self,
@@ -266,8 +260,9 @@ class SILoss:
         if self.weighting == "adaptive":
             error_norm = torch.norm(error.reshape(error.shape[0], -1), dim=1)
             weights = 1.0 / (error_norm.detach() ** 2 + 1e-3).pow(self.adaptive_p)
-            loss = mean_flat(weights * error_norm ** 2)
+            loss = weights * error_norm ** 2
         else:
-            loss = mean_flat(error ** 2)
+            error_norm = torch.norm(error.reshape(error.shape[0], -1), dim=1)
+            loss = error_norm ** 2
         
         return loss

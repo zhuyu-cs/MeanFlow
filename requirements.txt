@@ -8,3 +8,4 @@ lmdb
 Pillow
 torch_fidelity
 flax
+accelerate

@@ -11,8 +11,8 @@ Built on the [SiT](https://github.com/willisma/SiT/tree/main) architecture, this
 
 ```bash
 # Clone this repository
-git clone https://github.com/zhuyu-cs/MeanFlow-ImageNet.git
-cd MeanFlow-ImageNet
+git clone https://github.com/zhuyu-cs/MeanFlow.git
+cd MeanFlow
 
 # Install dependencies
 pip install -r requirements.txt
@@ -20,7 +20,93 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Preparing Data
+### CIFAR10
+
+**Requirements**
+- A100/H100 80G GPU for optimal performance
+
+*Note: UNet architecture is more memory-intensive than Diffusion Transformer (DiT) models*
+
+**Training**
+
+1. Switch to CIFAR10 branch
+```bash
+git checkout cifar10
+```
+
+2. Standard Training (High Memory)
+```bash
+accelerate launch --num_processes=8 \
+    train.py \
+    --exp-name "cifar_unet" \
+    --output-dir "work_dir" \
+    --data-dir "/data/dataset/train_sdvae_latents_lmdb" \
+    --resolution 32 \
+    --batch-size 1024 \
+    --allow-tf32 \
+    --mixed-precision "bf16" \
+    --epochs 19200\ # about 800k iters.
+    --path-type "linear" \
+    --weighting "adaptive" \
+    --time-sampler "logit_normal" \
+    --time-mu -2.0 \
+    --time-sigma 2.0 \
+    --ratio-r-not-equal-t 0.75 \
+    --adaptive-p 0.75
+```
+
+2. Memory-Efficient Training (Lower GPU Memory)
+```bash
+accelerate launch --num_processes=8 \
+      train.py \
+      --exp-name "cifar_unet" \
+      --output-dir "work_dir" \
+      --data-dir "/data/dataset/train_sdvae_latents_lmdb" \
+      --resolution 32 \
+      --batch-size 512 \
+      --gradient-accumulation-steps 2 \
+      --allow-tf32 \
+      --mixed-precision "bf16" \
+      --epochs 19200\ 
+      --path-type "linear" \
+      --weighting "adaptive" \
+      --time-sampler "logit_normal" \
+      --time-mu -2.0 \
+      --time-sigma 2.0 \
+      --ratio-r-not-equal-t 0.75 \
+      --adaptive-p 0.75
+```
+
+3. Evaluation 
+```bash
+torchrun --nproc_per_node=8 evaluate.py \
+    --ckpt "./work_dir/cifar_unet/checkpoints/0200000.pt" \
+    --per-proc-batch-size 128 \
+    --num-fid-samples 50000 \
+    --sample-dir "./fid_dir" \
+    --compute-metrics \
+    --num-steps 1\
+    --fid-ref "train"
+```
+**Results**
+
+| Iters | FID(NFE=1)|
+|---------------|----------------|
+| 150k |8.39|
+| 200k|6.15|
+| 250k|5.57|
+| 800k|*training*|
+
+
+
+### ImageNet 256
+
+**Switch to ImageNet branch**
+```bash
+git checkout main
+```
+
+**Preparing Data**
 
 This implementation uses LMDB datasets with VAE-encoded latents. The data preprocessing is based on the MAR approach.
 
@@ -37,13 +123,13 @@ torchrun --nproc_per_node=8 --nnodes=1 --node_rank=0 \
 ```
 Note: In the example above, we assume ImageNet has already been converted to LMDB format. The preprocessing script encodes the images using the Stable Diffusion VAE and stores the latents in a new LMDB database for efficient training.
 
-### Training
+**Training**
 
 We provide training commands for different model sizes (B, L, XL) with optimized hyperparameters based on the original paper:
 
 ```bash
 
-torchrun --nproc_per_node=8 \
+accelerate launch --multi_gpu \
     train.py \
     --exp-name "meanflow_b_4" \
     --output-dir "work_dir" \
@@ -61,13 +147,13 @@ torchrun --nproc_per_node=8 \
     --time-sigma 1.0 \
     --ratio-r-not-equal-t 0.25 \
     --adaptive-p 1.0 \
-    --cfg-omega 3.0 \
+    --cfg-omega 3.0 \ #1.0 for no cfg
     --cfg-kappa 0.\
     --cfg-min-t 0.0\
     --cfg-max-t 1.0\
     --bootstrap-ratio 0.
 
-torchrun --nproc_per_node=8 \
+accelerate launch --multi_gpu \
     train.py \
     --exp-name "meanflow_b_2" \
     --output-dir "exp" \
@@ -91,7 +177,7 @@ torchrun --nproc_per_node=8 \
     --cfg-max-t 1.0\
     --bootstrap-ratio 0.
 
-torchrun --nproc_per_node=8 \
+accelerate launch --multi_gpu \
     train.py \
     --exp-name "meanflow_l_2" \
     --output-dir "exp" \
@@ -118,7 +204,7 @@ torchrun --nproc_per_node=8 \
 ```
 Each configuration is optimized for different model sizes according to the original paper's settings.
 
-### Sampling and Evaluation
+**Sampling and Evaluation**
 
 For sampling and computing evaluation metrics (e.g., FID), we provide a distributed evaluation script:
 
@@ -137,7 +223,14 @@ torchrun --nproc_per_node=8 --nnodes=1 evaluate.py \
 ```
 This command runs sampling on 8 GPUs to generate 50,000 images for FID calculation. The script evaluates the model using a single sampling step (num-steps=1), demonstrating MeanFlow's one-step generation capability. The FID is computed against the statistics file specified in --fid-statistics-file.
 
-## Results
+**Results**
+
+| Model | Epoch | FID(NFE=1)|
+|---------------|---------------|----------------|
+|SiT-B/4(no cfg)| 80 |*training*|
+|SiT-B/4(w cfg)| 80 |*training*|
+|SiT-B/2(w cfg)| 80 |*training*|
+|SiT-L/2(w cfg)| 80 |*training*|
 
 We are currently working on reproducing the results from the original MeanFlow paper. For detailed results and performance metrics, please refer to the original paper: [MeanFlow](https://arxiv.org/pdf/2505.13447)
 

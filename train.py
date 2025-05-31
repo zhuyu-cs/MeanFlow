@@ -14,9 +14,10 @@ import torch.utils.checkpoint
 from tqdm.auto import tqdm
 from torch.utils.data import DataLoader
 from torchvision.utils import make_grid
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data.distributed import DistributedSampler
+
+from accelerate import Accelerator
+from accelerate.logging import get_logger
+from accelerate.utils import ProjectConfiguration, set_seed
 
 from sit import SiT_models
 from loss import SILoss
@@ -25,12 +26,7 @@ from dataset import LMDBLatentsDataset
 from diffusers.models.autoencoders.vae import DiagonalGaussianDistribution
 import math
 
-
-def array2grid(x):
-    nrow = round(math.sqrt(x.size(0)))
-    x = make_grid(x.clamp(0, 1), nrow=nrow, value_range=(0, 1))
-    x = x.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
-    return x
+logger = get_logger(__name__)
 
 
 @torch.no_grad()
@@ -67,65 +63,25 @@ def requires_grad(model, flag=True):
     for p in model.parameters():
         p.requires_grad = flag
 
-
-def setup_distributed():
-    """
-    Initialize distributed training environment.
-    """
-    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
-        rank = int(os.environ["RANK"])
-        world_size = int(os.environ["WORLD_SIZE"])
-        local_rank = int(os.environ["LOCAL_RANK"])
-    else:
-        rank = 0
-        world_size = 1
-        local_rank = 0
-    
-    if world_size > 1:
-        torch.cuda.set_device(local_rank)
-        dist.init_process_group(backend='nccl', init_method='env://')
-        dist.barrier()
-    
-    return rank, world_size, local_rank
-
-
-def cleanup_distributed():
-    """
-    Clean up distributed training.
-    """
-    if dist.is_initialized():
-        dist.destroy_process_group()
-
-
-def is_main_process(rank):
-    return rank == 0
-
-
-def reduce_tensor(tensor, world_size):
-    """
-    Reduce tensor across all processes.
-    """
-    if world_size == 1:
-        return tensor
-    
-    rt = tensor.clone()
-    dist.all_reduce(rt, op=dist.ReduceOp.SUM)
-    rt /= world_size
-    return rt
-
-
 #################################################################################
 #                                  Training Loop                                #
 #################################################################################
 
 def main(args):    
-    # Set up distributed training
-    rank, world_size, local_rank = setup_distributed()
-    device = torch.device(f'cuda:{local_rank}')
-    
-    # Set up directories and logging
-    if is_main_process(rank):
-        os.makedirs(args.output_dir, exist_ok=True)
+    # Set accelerator
+    logging_dir = Path(args.output_dir, args.logging_dir)
+    accelerator_project_config = ProjectConfiguration(
+        project_dir=args.output_dir, logging_dir=logging_dir
+        )
+
+    accelerator = Accelerator(
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        mixed_precision=args.mixed_precision,
+        project_config=accelerator_project_config,
+    )
+
+    if accelerator.is_main_process:
+        os.makedirs(args.output_dir, exist_ok=True)  # Make results folder (holds all experiment subfolders)
         save_dir = os.path.join(args.output_dir, args.exp_name)
         os.makedirs(save_dir, exist_ok=True)
         args_dict = vars(args)
@@ -133,7 +89,7 @@ def main(args):
         json_dir = os.path.join(save_dir, "args.json")
         with open(json_dir, 'w') as f:
             json.dump(args_dict, f, indent=4)
-        checkpoint_dir = f"{save_dir}/checkpoints"
+        checkpoint_dir = f"{save_dir}/checkpoints"  # Stores saved model checkpoints
         os.makedirs(checkpoint_dir, exist_ok=True)
         logger = create_logger(save_dir)
         logger.info(f"Experiment directory created at {save_dir}")
@@ -142,15 +98,14 @@ def main(args):
         logger.info("Training arguments:")
         for arg, value in sorted(args_dict.items()):
             logger.info(f"  {arg}: {value}")
-    else:
-        logger = None
             
-    # Set random seed
+    device = accelerator.device
+    if torch.backends.mps.is_available():
+        accelerator.native_amp = False    
     if args.seed is not None:
-        torch.manual_seed(args.seed + rank)
-        np.random.seed(args.seed + rank)
+        set_seed(args.seed + accelerator.process_index)
     
-    # Create model
+    # Create model:
     assert args.resolution % 8 == 0, "Image size must be divisible by 8 (for the VAE encoder)."
     latent_size = args.resolution // 8
     
@@ -179,8 +134,8 @@ def main(args):
         time_mu=args.time_mu,
         time_sigma=args.time_sigma,
         ratio_r_not_equal_t=args.ratio_r_not_equal_t,
-        weighting=args.weighting,
         adaptive_p=args.adaptive_p,
+        weighting=args.weighting,
         label_dropout_prob=args.cfg_prob,
         cfg_omega=args.cfg_omega,
         cfg_kappa=args.cfg_kappa,
@@ -188,8 +143,7 @@ def main(args):
         cfg_max_t=args.cfg_max_t,
         bootstrap_ratio=args.bootstrap_ratio
     )
-    
-    if is_main_process(rank):
+    if accelerator.is_main_process:
         logger.info(f"SiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
     
     # Setup optimizer
@@ -205,38 +159,27 @@ def main(args):
         eps=args.adam_epsilon,
     )    
     
-    # Setup data
+    # Setup data:
     train_dataset = LMDBLatentsDataset(args.data_dir, flip_prob=0.5)
-    local_batch_size = int(args.batch_size // world_size)
-    
-    if world_size > 1:
-        sampler = DistributedSampler(
-            train_dataset,
-            num_replicas=world_size,
-            rank=rank,
-            shuffle=True,
-            drop_last=True
-        )
-    else:
-        sampler = None
-    
+    local_batch_size = int(args.batch_size // accelerator.num_processes)
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=local_batch_size,
-        shuffle=(sampler is None),
-        sampler=sampler,
+        shuffle=True,
         num_workers=args.num_workers,
         pin_memory=True,
         drop_last=True
     )
-    
-    if is_main_process(rank):
+    if accelerator.is_main_process:
         logger.info(f"Dataset contains {len(train_dataset):,} images ({args.data_dir})")
+    steps_per_epoch = len(train_dataloader) // accelerator.gradient_accumulation_steps
+    args.max_train_steps = args.epochs * steps_per_epoch // accelerator.num_processes
+    # Prepare models for training:
+    update_ema(ema, model, decay=0)  # Ensure EMA is initialized with synced weights
+    model.train()  # important! This enables embedding dropout for classifier-free guidance
+    ema.eval()  # EMA model should always be in eval mode
     
-    steps_per_epoch = len(train_dataloader) // args.gradient_accumulation_steps
-    args.max_train_steps = args.epochs * steps_per_epoch
-    
-    # Resume from checkpoint
+    # resume:
     global_step = 0
     if args.resume_step > 0:
         ckpt_name = str(args.resume_step).zfill(7) +'.pt'
@@ -248,43 +191,28 @@ def main(args):
         ema.load_state_dict(ckpt['ema'])
         optimizer.load_state_dict(ckpt['opt'])
         global_step = ckpt['steps']
-    
-    # Wrap model with DDP
-    if world_size > 1:
-        model = DDP(model, device_ids=[local_rank])
-    
-    # Initialize EMA
-    update_ema(ema, model.module if hasattr(model, 'module') else model, decay=0)
-    model.train()
-    ema.eval()
-    
-    # Setup mixed precision
-    use_amp = args.mixed_precision != "no"
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp) if use_amp else None
-    amp_dtype = torch.float16 if args.mixed_precision == "fp16" else torch.bfloat16
-    
+
+    model, optimizer, train_dataloader = accelerator.prepare(
+        model, optimizer, train_dataloader
+    )
+        
     progress_bar = tqdm(
         range(0, args.max_train_steps),
         initial=global_step,
         desc="Steps",
-        disable=not is_main_process(rank),
+        # Only show the progress bar once on each machine.
+        disable=not accelerator.is_local_main_process,
     )
-    
-    # Latent normalization parameters
+    # here is a trick from IMM. https://github.com/lumalabs/imm/blob/main/training/encoders.py
     latents_scale = torch.tensor(
         [0.18125, 0.18125, 0.18125, 0.18125]
         ).view(1, 4, 1, 1).to(device)
     latents_bias = torch.tensor(
         [0., 0., 0., 0.]
         ).view(1, 4, 1, 1).to(device)
-    
-    # Training loop
     for epoch in range(args.epochs):
         model.train()
-        if world_size > 1:
-            sampler.set_epoch(epoch)
-        
-        for step, (moments, labels) in enumerate(train_dataloader):
+        for moments, labels in train_dataloader:
             moments = moments.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
 
@@ -293,100 +221,63 @@ def main(args):
                 x = posterior.sample()
                 x = x * latents_scale + latents_bias
             
-            # Gradient accumulation
-            is_accumulating = (step + 1) % args.gradient_accumulation_steps != 0
-            
-            # Mixed precision training
-            with torch.cuda.amp.autocast(enabled=use_amp, dtype=amp_dtype):
+            with accelerator.accumulate(model):
                 model_kwargs = dict(y=labels)
                 loss = loss_fn(model, ema, x, model_kwargs)
                 loss_mean = loss.mean()
-                loss = loss_mean / args.gradient_accumulation_steps
-            
-            # Backward pass
-            if scaler is not None:
-                scaler.scale(loss).backward()
-            else:
-                loss.backward()
-            
-            # Optimization step
-            if not is_accumulating:
-                # Gradient clipping
-                if scaler is not None:
-                    scaler.unscale_(optimizer)
-                    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
-                    optimizer.step()
-                
+                loss = loss_mean
+                    
+                ## optimization
+                accelerator.backward(loss)
+                if accelerator.sync_gradients:
+                    params_to_clip = model.parameters()
+                    grad_norm = accelerator.clip_grad_norm_(params_to_clip, args.max_grad_norm)
+                optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
-                
-                # Update EMA
-                update_ema(ema, model.module if hasattr(model, 'module') else model)
-                
-                progress_bar.update(1)
-                global_step += 1
-                
-                # Checkpointing
-                if global_step % args.checkpointing_steps == 0 and global_step > 0:
-                    if is_main_process(rank):
-                        checkpoint = {
-                            "model": (model.module if hasattr(model, 'module') else model).state_dict(),
-                            "ema": ema.state_dict(),
-                            "opt": optimizer.state_dict(),
-                            "args": args,
-                            "steps": global_step,
-                        }
-                        checkpoint_path = f"{checkpoint_dir}/{global_step:07d}.pt"
-                        torch.save(checkpoint, checkpoint_path)
-                        logger.info(f"Saved checkpoint to {checkpoint_path}")
-                
-                # Logging
-                if world_size > 1:
-                    loss_mean_reduced = reduce_tensor(loss_mean, world_size)
-                    grad_norm_reduced = reduce_tensor(grad_norm, world_size)
-                else:
-                    loss_mean_reduced = loss_mean
-                    grad_norm_reduced = grad_norm
-                
-                logs = {
-                    "loss": loss_mean_reduced.item() * args.gradient_accumulation_steps,
-                    "grad_norm": grad_norm_reduced.item()
-                }
-                progress_bar.set_postfix(**logs)
-                
-                # Log to file periodically
-                if is_main_process(rank) and global_step % 100 == 0:
-                    logger.info(f"Step {global_step}: loss = {logs['loss']:.4f}, grad_norm = {logs['grad_norm']:.4f}")
+
+                if accelerator.sync_gradients:
+                    update_ema(ema, model)
             
+            if accelerator.sync_gradients:
+                progress_bar.update(1)
+                global_step += 1                
+            if global_step % args.checkpointing_steps == 0 and global_step > 0 or global_step >= args.max_train_steps:
+                if accelerator.is_main_process:
+                    checkpoint = {
+                        "model": model.module.state_dict(),
+                        "ema": ema.state_dict(),
+                        "opt": optimizer.state_dict(),
+                        "args": args,
+                        "steps": global_step,
+                    }
+                    checkpoint_path = f"{checkpoint_dir}/{global_step:07d}.pt"
+                    torch.save(checkpoint, checkpoint_path)
+                    logger.info(f"Saved checkpoint to {checkpoint_path}")
+
+            logs = {
+                "loss": accelerator.gather(loss_mean).mean().detach().item(), 
+                "grad_norm": accelerator.gather(grad_norm).mean().detach().item()
+            }
+            progress_bar.set_postfix(**logs)
+            
+            # Log to file periodically
+            if accelerator.is_main_process and global_step % 100 == 0:
+                logger.info(f"Step {global_step}: loss = {logs['loss']:.4f}, grad_norm = {logs['grad_norm']:.4f}")
+
             if global_step >= args.max_train_steps:
                 break
         
         # Log epoch completion
-        if is_main_process(rank):
+        if accelerator.is_main_process:
             logger.info(f"Completed epoch {epoch+1}/{args.epochs}")
             
         if global_step >= args.max_train_steps:
             break
     
-    # Final checkpoint
-    if is_main_process(rank):
-        checkpoint = {
-            "model": (model.module if hasattr(model, 'module') else model).state_dict(),
-            "ema": ema.state_dict(),
-            "opt": optimizer.state_dict(),
-            "args": args,
-            "steps": global_step,
-        }
-        checkpoint_path = f"{checkpoint_dir}/{global_step:07d}.pt"
-        torch.save(checkpoint, checkpoint_path)
-        logger.info(f"Saved final checkpoint to {checkpoint_path}")
+    accelerator.wait_for_everyone()
+    if accelerator.is_main_process:
         logger.info("Training completed!")
-    
-    cleanup_distributed()
-
+    accelerator.end_training()
 
 def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="MeanFlow Training")
@@ -402,7 +293,7 @@ def parse_args(input_args=None):
     parser.add_argument("--num-classes", type=int, default=1000)
 
     # dataset
-    parser.add_argument("--data-dir", type=str, default="/data/dataset/train_jaxvae_latents_lmdb")
+    parser.add_argument("--data-dir", type=str, default="/data/train_sdvae_latents_lmdb")
     parser.add_argument("--resolution", type=int, choices=[256, 512], default=256)
     parser.add_argument("--batch-size", type=int, default=256)
 
@@ -444,7 +335,7 @@ def parse_args(input_args=None):
     parser.add_argument("--cfg-kappa", type=float, default=0.0, help="CFG kappa param for mixing")
     parser.add_argument("--cfg-min-t", type=float, default=0.0, help="Minum time for cfg trigger")
     parser.add_argument("--cfg-max-t", type=float, default=1.0, help="Maxium time for cfg trigger")
-    parser.add_argument("--bootstrap-ratio", type=float, default=0., help="Ratio of EMA gt")
+    parser.add_argument("--bootstrap-ratio", type=float, default=0.75, help="Ratio of EMA gt")
     
     if input_args is not None:
         args = parser.parse_args(input_args)
@@ -452,7 +343,6 @@ def parse_args(input_args=None):
         args = parser.parse_args()
         
     return args
-
 
 if __name__ == "__main__":
     args = parse_args()
