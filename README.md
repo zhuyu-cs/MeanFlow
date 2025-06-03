@@ -95,6 +95,7 @@ torchrun --nproc_per_node=8 evaluate.py \
 | 150k |8.39|
 | 200k|6.15|
 | 250k|5.57|
+| 600k|4.62|
 | 800k|*training*|
 
 
