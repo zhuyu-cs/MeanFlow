@@ -184,54 +184,6 @@ class GroupNorm(torch.nn.Module):
         )
         return x
  
-
-
-# ----------------------------------------------------------------------------
-# Attention weight computation, i.e., softmax(Q^T * K).
-# Performs all computation using FP32, but uses the original datatype for
-# inputs/outputs/gradients to conserve memory.
-
-#! torch.func.jvp do not support 'AttentionOp'.
-# class AttentionOp(torch.autograd.Function):
-#     @staticmethod
-#     def forward(q, k):
-#         w = (
-#             torch.einsum(
-#                 "ncq,nck->nqk",
-#                 q.to(torch.float32),
-#                 (k / np.sqrt(k.shape[1])).to(torch.float32),
-#             )
-#             .softmax(dim=2)
-#             .to(q.dtype)
-#         ) 
-#         return w
-
-#     @staticmethod
-#     def setup_context(ctx, inputs, outputs):
-#         q,k = inputs
-#         w = outputs
-#         ctx.save_for_backward(q, k, w) 
-#         # ctx.w = w
-        
-#     @staticmethod
-#     def backward(ctx, dw):
-#         q, k, w = ctx.saved_tensors
-#         db = torch._softmax_backward_data(
-#             grad_output=dw.to(torch.float32),
-#             output=w.to(torch.float32),
-#             dim=2,
-#             input_dtype=torch.float32,
-#         )
-#         dq = torch.einsum("nck,nqk->ncq", k.to(torch.float32), db).to(
-#             q.dtype
-#         ) / np.sqrt(k.shape[1])
-#         dk = torch.einsum("ncq,nqk->nck", q.to(torch.float32), db).to(
-#             k.dtype
-#         ) / np.sqrt(k.shape[1])
-#         return dq, dk
-
- 
-
 # ----------------------------------------------------------------------------
 # Unified U-Net block with optional up/downsampling and self-attention.
 # Represents the union of all features employed by the DDPM++, NCSN++, and
@@ -397,7 +349,7 @@ class SongUNet(torch.nn.Module):
         # Mapping.
         self.map_noise = PositionalEmbedding(num_channels=noise_channels, endpoint=True) if embedding_type == 'positional' else FourierEmbedding(num_channels=noise_channels, **embedding_kwargs)
         self.map_layer0 = Linear(in_features=noise_channels, out_features=emb_channels, **init)
-        self.map_layer1 = Linear(in_features=emb_channels, out_features=emb_channels, **init)
+        self.map_layer1 = Linear(in_features=emb_channels, out_features=emb_channels//2, **init)
  
         self.s_embed = s_embed
         if s_embed:
@@ -416,7 +368,7 @@ class SongUNet(torch.nn.Module):
                 **init,
             )
             self.map_layer1_s = Linear(
-                in_features=emb_channels, out_features=emb_channels, **init
+                in_features=emb_channels, out_features=emb_channels//2, **init
             )
         # Encoder.
         self.enc = torch.nn.ModuleDict()
@@ -472,15 +424,15 @@ class SongUNet(torch.nn.Module):
         emb = silu(self.map_layer0(emb))
         emb = self.map_layer1(emb)
         
-        if noise_labels_r is not None and self.s_embed:
+        # if noise_labels_r is not None and self.s_embed:
 
-            emb_s = self.map_noise_s(noise_labels_r)
-            emb_s = (
-                emb_s.reshape(emb_s.shape[0], 2, -1).flip(1).reshape(*emb_s.shape)
-            )  # swap sin/cos
-            emb_s = silu(self.map_layer0_s(emb_s))
-            emb_s = self.map_layer1_s(emb_s)
-            emb = emb + emb_s
+        emb_s = self.map_noise_s(noise_labels_r)
+        emb_s = (
+            emb_s.reshape(emb_s.shape[0], 2, -1).flip(1).reshape(*emb_s.shape)
+        )  # swap sin/cos
+        emb_s = silu(self.map_layer0_s(emb_s))
+        emb_s = self.map_layer1_s(emb_s)
+        emb = torch.cat([emb,emb_s],dim=1)
             
         emb = silu(emb)
  
