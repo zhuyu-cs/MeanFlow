@@ -93,8 +93,9 @@ class SILoss:
         
         def model_wrapper(z_t, r, t):
             return model.module(z_t, r, t)
-        
-        u, dudt = torch.func.jvp(
+
+        u = model(z_t, r, t) # fix bug for ddp 
+        _, dudt = torch.func.jvp(
             model_wrapper,
             (z_t, r, t),  
             (v_t, torch.zeros_like(r), torch.ones_like(t)) 
