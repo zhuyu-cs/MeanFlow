@@ -7,6 +7,17 @@ MeanFlow introduces a principled framework for one-step generative modeling by i
 
 Built on the [SiT](https://github.com/willisma/SiT/tree/main) architecture, this implementation focuses on reproducing the original paper's efficient generation capabilities.
 
+## Reproduced ImageNet Results
+
+| Model | Epoch | FID(NFE=1), our results| FID(NFE=1), results in paper|
+|---------------|---------------|----------------|----------------|
+|SiT-B/4(no cfg)| 80 |67.01|61.06, Table 1f|
+|SiT-B/4(w cfg)| 80 |15.43|15.53, Table 1f|
+|SiT-B/2(w cfg)| 240 |*training*|6.17, Table 2|
+|SiT-L/2(w cfg)| 240 |*training*|3.84, Table 2|
+
+We are currently working on reproducing the results from the original MeanFlow paper. For detailed results and performance metrics, please refer to the original paper: [MeanFlow](https://arxiv.org/pdf/2505.13447)
+
 ## Installation
 
 ```bash
@@ -92,13 +103,7 @@ torchrun --nproc_per_node=8 evaluate.py \
 
 | Iters | FID(NFE=1)|
 |---------------|----------------|
-| 50k|178.12|
-| 100k|12.28|
-| 150k|7.68|
-| 200k|6.53|
-| 250k|5.90|
-| 300k|5.67|
-| 350k|5.43|
+| 50k|*training*|
 | 800k|*training*|
 
 
@@ -227,18 +232,8 @@ torchrun --nproc_per_node=8 --nnodes=1 evaluate.py \
 ```
 This command runs sampling on 8 GPUs to generate 50,000 images for FID calculation. The script evaluates the model using a single sampling step (num-steps=1), demonstrating MeanFlow's one-step generation capability. The FID is computed against the statistics file specified in --fid-statistics-file.
 
-**Results**
-
-| Model | Epoch | FID(NFE=1), our results| FID(NFE=1), results in paper|
-|---------------|---------------|----------------|----------------|
-|SiT-B/4(no cfg)| 80 |67.01|61.06, Table 1f|
-|SiT-B/4(w cfg)| 80 |15.43|15.53, Table 1f|
-|SiT-B/2(w cfg)| 240 |*training*|6.17, Table 2|
-|SiT-L/2(w cfg)| 240 |*training*|3.84, Table 2|
-
-We are currently working on reproducing the results from the original MeanFlow paper. For detailed results and performance metrics, please refer to the original paper: [MeanFlow](https://arxiv.org/pdf/2505.13447)
-
-Note, we currently use [sd_dvae](https://huggingface.co/stabilityai/sd-vae-ft-mse), which is not the suggested tokenizer in original paper ([flaxvae](https://huggingface.co/pcuenq/sd-vae-ft-mse-flax)).
+**Notes**
+We currently use [sd_dvae](https://huggingface.co/stabilityai/sd-vae-ft-mse), which is not the suggested tokenizer in original paper ([flaxvae](https://huggingface.co/pcuenq/sd-vae-ft-mse-flax)).
 
 ## Acknowledgements
 
