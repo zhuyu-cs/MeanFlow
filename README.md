@@ -103,7 +103,8 @@ torchrun --nproc_per_node=8 evaluate.py \
 
 | Iters | FID(NFE=1)|
 |---------------|----------------|
-| 50k|*training*|
+| 50k|210.36|
+| 100k|6.35|
 | 800k|*training*|
 
 
