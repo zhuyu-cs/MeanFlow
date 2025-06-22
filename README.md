@@ -13,7 +13,7 @@ Built on the [SiT](https://github.com/willisma/SiT/tree/main) architecture, this
 |---------------|---------------|----------------|----------------|
 |SiT-B/4(no cfg)| 80 |58.74|61.06, Table 1f|
 |SiT-B/4(w cfg)| 80 |15.43|15.53, Table 1f|
-|SiT-B/2(w cfg)| 240 |*training*|6.17, Table 2|
+|SiT-B/2(w cfg)| 240 |6.06|6.17, Table 2|
 |SiT-L/2(w cfg)| 240 |*training*|3.84, Table 2|
 
 We are currently working on reproducing the results from the original MeanFlow paper. For detailed results and performance metrics, please refer to the original paper: [MeanFlow](https://arxiv.org/pdf/2505.13447)
