@@ -1,6 +1,6 @@
-# MeanFlow: Unofficial Implementation
+# MeanFlow: Pytorch Implementation
 
-This repository contains an unofficial, minimalist implementation of MeanFlow, a single-step flow matching model for image generation.
+This repository contains an minimalist pytorch implementation of MeanFlow, a single-step flow matching model for image generation.
 
 ## Overview
 MeanFlow introduces a principled framework for one-step generative modeling by introducing the average velocity in Flow Matching methods. 
