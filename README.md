@@ -1,11 +1,10 @@
 # MeanFlow: Pytorch Implementation
-
-This repository contains an minimalist pytorch implementation of MeanFlow, a single-step flow matching model for image generation.
+This repository contains a minimalist PyTorch implementation of MeanFlow, a novel single-step flow matching model for high-quality image generation.
 
 ## Overview
-MeanFlow introduces a principled framework for one-step generative modeling by introducing the average velocity in Flow Matching methods. 
+MeanFlow introduces a principled framework for one-step generative modeling by formulating the concept of average velocity in Flow Matching methods. In contrast to conventional approaches that model instantaneous velocities, MeanFlow leverages the MeanFlow Identity to establish a well-defined relationship between average and instantaneous velocities, enabling robust single-step generation without requiring pre-training, distillation, or curriculum learning.
 
-Built on the [SiT](https://github.com/willisma/SiT/tree/main) architecture, this implementation focuses on reproducing the original paper's efficient generation capabilities.
+Built upon the [SiT](https://github.com/willisma/SiT/tree/main)  transformer architecture, this implementation focuses on reproducing the state-of-the-art single-step generation capabilities demonstrated in the original paper. 
 
 ## Reproduced ImageNet Results
 
@@ -18,7 +17,9 @@ Built on the [SiT](https://github.com/willisma/SiT/tree/main) architecture, this
 |SiT-XL/2(w cfg)| 240 |*training*|3.43, Table 2|
 |SiT-XL/2(w cfg) + [pretrained 7M weights](https://www.dl.dropboxusercontent.com/scl/fi/as9oeomcbub47de5g4be0/SiT-XL-2-256.pt?rlkey=uxzxmpicu46coq3msb17b9ofa&dl=0)| 240 |*training*|3.43, Table 2|
 
-We are currently working on reproducing the results from the original MeanFlow paper. For detailed results and performance metrics, please refer to the original paper: [MeanFlow](https://arxiv.org/pdf/2505.13447)
+**Note**: **We are still working on reproducing all experimental results and plan to release the trained model weights upon completion**.
+
+For comprehensive performance metrics and theoretical foundations, please refer to the original paper: [Mean Flows for One-step Generative Modeling](https://arxiv.org/pdf/2505.13447).
 
 ## Installation
 
@@ -36,13 +37,13 @@ pip install -r requirements.txt
 ### CIFAR10
 
 **Requirements**
-- A100/H100 80G GPU for optimal performance
+- NVIDIA A100/H100 80GB GPU recommended for optimal performance
 
-*Note: UNet architecture is more memory-intensive than Diffusion Transformer (DiT) models*
+*Note: The UNet architecture needs higher memory consumption compared to Diffusion Transformer (DiT) models*
 
 **Training**
 
-1. Switch to CIFAR10 branch
+1. Switch to the CIFAR-10 experimental branch:
 ```bash
 git checkout cifar10
 ```
@@ -119,7 +120,7 @@ git checkout main
 
 **Preparing Data**
 
-This implementation uses LMDB datasets with VAE-encoded latents. The data preprocessing is based on the MAR approach.
+This implementation utilizes LMDB datasets with VAE-encoded latent representations for efficient training. The preprocessing pipeline is adapted from the [MAR](https://github.com/LTH14/mar/blob/main/main_cache.py).
 
 ```bash
 # Example dataset preparation for ImageNet
@@ -132,11 +133,11 @@ torchrun --nproc_per_node=8 --nnodes=1 --node_rank=0 \
     --batch_size 1024 \
     --lmdb_size_gb 400
 ```
-Note: In the example above, we assume ImageNet has already been converted to LMDB format. The preprocessing script encodes the images using the Stable Diffusion VAE and stores the latents in a new LMDB database for efficient training.
+*Note: The preprocessing assumes ImageNet has been pre-converted to LMDB format.*
 
 **Training**
 
-We provide training commands for different model sizes (B, L, XL) with optimized hyperparameters based on the original paper:
+We provide training configurations for different model scales (B, L, XL) based on the hyperparameters from the original paper::
 
 ```bash
 
@@ -217,7 +218,7 @@ Each configuration is optimized for different model sizes according to the origi
 
 **Sampling and Evaluation**
 
-For sampling and computing evaluation metrics (e.g., FID), we provide a distributed evaluation script:
+For large-scale sampling and quantitative evaluation (FID, IS), we provide a distributed evaluation framework:
 
 ```bash
 torchrun --nproc_per_node=8 --nnodes=1 evaluate.py \
@@ -232,10 +233,11 @@ torchrun --nproc_per_node=8 --nnodes=1 evaluate.py \
     --num-steps 1\
     --fid-statistics-file "./fid_stats/adm_in256_stats.npz"
 ```
-This command runs sampling on 8 GPUs to generate 50,000 images for FID calculation. The script evaluates the model using a single sampling step (num-steps=1), demonstrating MeanFlow's one-step generation capability. The FID is computed against the statistics file specified in --fid-statistics-file.
+This evaluation performs distributed sampling across 8 GPUs to generate 50,000 high-quality samples for robust FID computation. The framework validates MeanFlow's single-step generation capability (num-steps=1) and computes FID scores against pre-computed ImageNet statistics.
 
-**Notes**
-We currently use [sd_dvae](https://huggingface.co/stabilityai/sd-vae-ft-mse), which is not the suggested tokenizer in original paper ([flaxvae](https://huggingface.co/pcuenq/sd-vae-ft-mse-flax)).
+**Notes**: 
+1. When evaluating models trained with CFG , the --cfg-scale parameter must be set to 1.0 during inference, as the CFG guidance has been incorporated into the model during training and is no longer controllable at sampling time.
+2. We currently use [sd_dvae](https://huggingface.co/stabilityai/sd-vae-ft-mse), which is not the suggested tokenizer in original paper ([flaxvae](https://huggingface.co/pcuenq/sd-vae-ft-mse-flax)).
 
 ## Acknowledgements
 
@@ -245,13 +247,21 @@ This implementation builds upon:
 - [MAR](https://github.com/LTH14/mar/tree/main) (data preprocessing)
 
 ## Citation
-If you find this implementation useful, please cite the original paper:
+If you find this implementation useful in your research, please cite the original work and this repo:
 ```
 @article{geng2025mean,
   title={Mean Flows for One-step Generative Modeling},
   author={Geng, Zhengyang and Deng, Mingyang and Bai, Xingjian and Kolter, J Zico and He, Kaiming},
   journal={arXiv preprint arXiv:2505.13447},
   year={2025}
+}
+
+@misc{meanflow_pytorch,
+  title={MeanFlow: PyTorch Implementation},
+  author={Zhu, Yu},
+  year={2025},
+  howpublished={\url{https://github.com/zhuyu-cs/MeanFlow}},
+  note={PyTorch implementation of Mean Flows for One-step Generative Modeling}
 }
 ```
 ## License
