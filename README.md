@@ -16,6 +16,7 @@ Built upon the [SiT](https://github.com/willisma/SiT/tree/main)  transformer arc
 |SiT-L/2(w cfg)| 240 |*training*|3.84, Table 2|
 |SiT-XL/2(w cfg)| 240 |*training*|3.43, Table 2|
 |SiT-XL/2(w cfg) + [pretrained weights](https://www.dl.dropboxusercontent.com/scl/fi/as9oeomcbub47de5g4be0/SiT-XL-2-256.pt?rlkey=uxzxmpicu46coq3msb17b9ofa&dl=0)| 240 |*training*|3.43, Table 2|
+|SiT-XL/2(w cfg)| 240 |*training*|ImageNet512|
 
 **Note**: **We are still working on reproducing all experimental results and plan to release the trained model weights upon completion**.
 
