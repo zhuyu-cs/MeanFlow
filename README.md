@@ -238,7 +238,7 @@ This evaluation performs distributed sampling across 8 GPUs to generate 50,000 h
 
 **Notes**: 
 1. When evaluating models trained with CFG , the --cfg-scale parameter must be set to 1.0 during inference, as the CFG guidance has been incorporated into the model during training and is no longer controllable at sampling time.
-2. We currently use [sd_dvae](https://huggingface.co/stabilityai/sd-vae-ft-mse), which is not the suggested tokenizer in original paper ([flaxvae](https://huggingface.co/pcuenq/sd-vae-ft-mse-flax)).
+2. We currently use [sd-vae-ft-ema](https://huggingface.co/stabilityai/sd-vae-ft-mse), which is not the suggested tokenizer in original paper ([sd-vae-ft-mse](https://huggingface.co/pcuenq/sd-vae-ft-mse-flax)).
 
 ## Acknowledgements
 
