@@ -21,10 +21,10 @@ Built upon the [SiT](https://github.com/willisma/SiT/tree/main)  transformer arc
 For comprehensive performance metrics and theoretical foundations, please refer to the original paper: [Mean Flows for One-step Generative Modeling](https://arxiv.org/pdf/2505.13447).
 
 Other exploration：Fine-tuning Pretrained Flow Matching Models
-| Model | Epoch | FID(NFE=1), our results| FID(NFE=2), our results|FID(NFE=2), results in paper|
-|---------------|---------------|----------------|----------------|----------------|
-|SiT-XL/2(w cfg) + [pretrained weights](https://www.dl.dropboxusercontent.com/scl/fi/as9oeomcbub47de5g4be0/SiT-XL-2-256.pt?rlkey=uxzxmpicu46coq3msb17b9ofa&dl=0)| 240 |4.52|2.81 (1400+20+40)|2.93, Table 2|
-|SiT-XL/2(w cfg) + [pretrained weights](https://www.dl.dropboxusercontent.com/scl/fi/as9oeomcbub47de5g4be0/SiT-XL-2-256.pt?rlkey=uxzxmpicu46coq3msb17b9ofa&dl=0)| 1000 |15.50|2.55 (1400+20+110)|2.20, Table 2|
+| Model | FID(NFE=1), our results| FID(NFE=2), our results|FID(NFE=2), results in paper|
+|---------------|---------------|----------------|----------------|
+|SiT-XL/2(w cfg) + [pretrained weights](https://www.dl.dropboxusercontent.com/scl/fi/as9oeomcbub47de5g4be0/SiT-XL-2-256.pt?rlkey=uxzxmpicu46coq3msb17b9ofa&dl=0)|4.52|2.81 (1400+20+40)|2.93, 240 epoch, Table 2|
+|SiT-XL/2(w cfg) + [pretrained weights](https://www.dl.dropboxusercontent.com/scl/fi/as9oeomcbub47de5g4be0/SiT-XL-2-256.pt?rlkey=uxzxmpicu46coq3msb17b9ofa&dl=0)|15.50|2.55 (1400+20+110)|2.20, 1000 epoch, Table 2|
 
 **Tips**: Direct fine-tuning using MeanFlow with classifier-free guidance (CFG) exhibits training instability. To address this issue, we adopt a staged training strategy: initially fine-tuning with MeanFlow without CFG for 20 epochs, followed by continued fine-tuning with CFG-enabled MeanFlow.
 
