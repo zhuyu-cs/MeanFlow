@@ -13,14 +13,20 @@ Built upon the [SiT](https://github.com/willisma/SiT/tree/main)  transformer arc
 |SiT-B/4(no cfg)| 80 |58.74|61.06, Table 1f|
 |SiT-B/4(w cfg)| 80 |15.43|15.53, Table 1f|
 |SiT-B/2(w cfg)| 240 |6.06|6.17, Table 2|
-|SiT-L/2(w cfg)| 240 |*training*|3.84, Table 2|
-|SiT-XL/2(w cfg)| 240 |*training*|3.43, Table 2|
-|SiT-XL/2(w cfg) + [pretrained weights](https://www.dl.dropboxusercontent.com/scl/fi/as9oeomcbub47de5g4be0/SiT-XL-2-256.pt?rlkey=uxzxmpicu46coq3msb17b9ofa&dl=0)| 240 |*training*|3.43, Table 2|
-|SiT-XL/2(w cfg)| 240 |*training*|ImageNet512|
-
+|SiT-L/2(w cfg)| 240 |4.12(130/240)*training*|3.84, Table 2|
+|SiT-XL/2(w cfg)| 240 |3.56(140/240)*training*|3.43, Table 2|
+|SiT-XL/2(w cfg)| 240 |22.97(20/240)*training*|ImageNet512|
 **Note**: **We are still working on reproducing all experimental results and plan to release the trained model weights upon completion**.
-
 For comprehensive performance metrics and theoretical foundations, please refer to the original paper: [Mean Flows for One-step Generative Modeling](https://arxiv.org/pdf/2505.13447).
+
+Other exploration：Fine-tuning Pretrained Flow Matching Models
+| Model | Epoch | FID(NFE=1), our results| FID(NFE=2), our results|FID(NFE=2), results in paper|
+|---------------|---------------|----------------|----------------|----------------|
+|SiT-XL/2(w cfg) + [pretrained weights](https://www.dl.dropboxusercontent.com/scl/fi/as9oeomcbub47de5g4be0/SiT-XL-2-256.pt?rlkey=uxzxmpicu46coq3msb17b9ofa&dl=0)| 240 |4.52|2.81 (1400+20+40)|2.93, Table 2|
+|SiT-XL/2(w cfg) + [pretrained weights](https://www.dl.dropboxusercontent.com/scl/fi/as9oeomcbub47de5g4be0/SiT-XL-2-256.pt?rlkey=uxzxmpicu46coq3msb17b9ofa&dl=0)| 1000 |15.50|2.55 (1400+20+110)|2.20, Table 2|
+**Tips**: Direct fine-tuning using MeanFlow with classifier-free guidance (CFG) exhibits training instability. To address this issue, we adopt a staged training strategy: initially fine-tuning with MeanFlow without CFG for 20 epochs, followed by continued fine-tuning with CFG-enabled MeanFlow.
+
+
 
 ## Installation
 
