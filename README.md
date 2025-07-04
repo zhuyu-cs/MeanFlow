@@ -46,89 +46,7 @@ pip install -r requirements.txt
 
 ## Usage
 
-### CIFAR10
-
-**Requirements**
-- NVIDIA A100/H100 80GB GPU recommended for optimal performance
-
-*Note: The UNet architecture needs higher memory consumption compared to Diffusion Transformer (DiT) models*
-
-**Training**
-
-1. Switch to the CIFAR-10 experimental branch:
-```bash
-git checkout cifar10
-```
-
-2. Standard Training (High Memory)
-```bash
-accelerate launch --num_processes=8 \
-    train.py \
-    --exp-name "cifar_unet" \
-    --output-dir "work_dir" \
-    --data-dir "/data/dataset/train_sdvae_latents_lmdb" \
-    --resolution 32 \
-    --batch-size 1024 \
-    --allow-tf32 \
-    --mixed-precision "bf16" \
-    --epochs 19200\ # about 800k iters.
-    --path-type "linear" \
-    --weighting "adaptive" \
-    --time-sampler "logit_normal" \
-    --time-mu -2.0 \
-    --time-sigma 2.0 \
-    --ratio-r-not-equal-t 0.75 \
-    --adaptive-p 0.75
-```
-
-2. Memory-Efficient Training (Lower GPU Memory)
-```bash
-accelerate launch --num_processes=8 \
-      train.py \
-      --exp-name "cifar_unet" \
-      --output-dir "work_dir" \
-      --data-dir "/data/dataset/train_sdvae_latents_lmdb" \
-      --resolution 32 \
-      --batch-size 512 \
-      --gradient-accumulation-steps 2 \
-      --allow-tf32 \
-      --mixed-precision "bf16" \
-      --epochs 19200\ 
-      --path-type "linear" \
-      --weighting "adaptive" \
-      --time-sampler "logit_normal" \
-      --time-mu -2.0 \
-      --time-sigma 2.0 \
-      --ratio-r-not-equal-t 0.75 \
-      --adaptive-p 0.75
-```
-
-3. Evaluation 
-```bash
-torchrun --nproc_per_node=8 evaluate.py \
-    --ckpt "./work_dir/cifar_unet/checkpoints/0200000.pt" \
-    --per-proc-batch-size 128 \
-    --num-fid-samples 50000 \
-    --sample-dir "./fid_dir" \
-    --compute-metrics \
-    --num-steps 1\
-    --fid-ref "train"
-```
-**Results**
-
-| Iters | FID(NFE=1)|
-|---------------|----------------|
-| 50k|210.36|
-| 100k|6.35|
-
-
-
 ### ImageNet 256
-
-**Switch to ImageNet branch**
-```bash
-git checkout main
-```
 
 **Preparing Data**
 
@@ -243,6 +161,81 @@ torchrun --nproc_per_node=8 --nnodes=1 evaluate.py \
     --fid-statistics-file "./fid_stats/adm_in256_stats.npz"
 ```
 This evaluation performs distributed sampling across 8 GPUs to generate 50,000 high-quality samples for robust FID computation. The framework validates MeanFlow's single-step generation capability (num-steps=1) and computes FID scores against pre-computed ImageNet statistics.
+
+### CIFAR10
+
+**Requirements**
+- NVIDIA A100/H100 80GB GPU recommended for optimal performance
+
+*Note: The UNet architecture needs higher memory consumption compared to Diffusion Transformer (DiT) models*
+
+**Training**
+
+1. Switch to the CIFAR-10 experimental branch:
+```bash
+git checkout cifar10
+```
+
+2. Standard Training (High Memory)
+```bash
+accelerate launch --num_processes=8 \
+    train.py \
+    --exp-name "cifar_unet" \
+    --output-dir "work_dir" \
+    --data-dir "/data/dataset/train_sdvae_latents_lmdb" \
+    --resolution 32 \
+    --batch-size 1024 \
+    --allow-tf32 \
+    --mixed-precision "bf16" \
+    --epochs 19200\ # about 800k iters.
+    --path-type "linear" \
+    --weighting "adaptive" \
+    --time-sampler "logit_normal" \
+    --time-mu -2.0 \
+    --time-sigma 2.0 \
+    --ratio-r-not-equal-t 0.75 \
+    --adaptive-p 0.75
+```
+
+2. Memory-Efficient Training (Lower GPU Memory)
+```bash
+accelerate launch --num_processes=8 \
+      train.py \
+      --exp-name "cifar_unet" \
+      --output-dir "work_dir" \
+      --data-dir "/data/dataset/train_sdvae_latents_lmdb" \
+      --resolution 32 \
+      --batch-size 512 \
+      --gradient-accumulation-steps 2 \
+      --allow-tf32 \
+      --mixed-precision "bf16" \
+      --epochs 19200\ 
+      --path-type "linear" \
+      --weighting "adaptive" \
+      --time-sampler "logit_normal" \
+      --time-mu -2.0 \
+      --time-sigma 2.0 \
+      --ratio-r-not-equal-t 0.75 \
+      --adaptive-p 0.75
+```
+
+3. Evaluation 
+```bash
+torchrun --nproc_per_node=8 evaluate.py \
+    --ckpt "./work_dir/cifar_unet/checkpoints/0200000.pt" \
+    --per-proc-batch-size 128 \
+    --num-fid-samples 50000 \
+    --sample-dir "./fid_dir" \
+    --compute-metrics \
+    --num-steps 1\
+    --fid-ref "train"
+```
+**Results**
+
+| Iters | FID(NFE=1)|
+|---------------|----------------|
+| 50k|210.36|
+| 100k|6.35|
 
 ## Acknowledgements
 
