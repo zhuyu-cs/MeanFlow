@@ -29,6 +29,9 @@ Other exploration：Fine-tuning Pretrained Flow Matching Models
 **Tips**: Direct fine-tuning using MeanFlow with classifier-free guidance (CFG) exhibits training instability. To address this issue, we adopt a staged training strategy: initially fine-tuning with MeanFlow without CFG for 20 epochs, followed by continued fine-tuning with CFG-enabled MeanFlow.
 
 
+**Notes**: 
+1. When evaluating models trained with CFG , the --cfg-scale parameter must be set to 1.0 during inference, as the CFG guidance has been incorporated into the model during training and is no longer controllable at sampling time.
+2. We currently use [sd-vae-ft-ema](https://huggingface.co/stabilityai/sd-vae-ft-mse), which is not the suggested tokenizer in original paper ([sd-vae-ft-mse](https://huggingface.co/pcuenq/sd-vae-ft-mse-flax)). **Maybe replacing with ```sd-vae-ft-mse``` would yield better results**.
 
 ## Installation
 
@@ -171,8 +174,7 @@ accelerate launch --multi_gpu \
     --cfg-omega 3.0 \ #1.0 for no cfg
     --cfg-kappa 0.\
     --cfg-min-t 0.0\
-    --cfg-max-t 1.0\
-    --bootstrap-ratio 0.
+    --cfg-max-t 1.0
 
 accelerate launch --multi_gpu \
     train.py \
@@ -195,8 +197,7 @@ accelerate launch --multi_gpu \
     --cfg-omega 1.0 \
     --cfg-kappa 0.5\
     --cfg-min-t 0.0\
-    --cfg-max-t 1.0\
-    --bootstrap-ratio 0.
+    --cfg-max-t 1.0
 
 accelerate launch --multi_gpu \
     train.py \
@@ -219,8 +220,7 @@ accelerate launch --multi_gpu \
     --cfg-omega 0.2 \
     --cfg-kappa 0.92\
     --cfg-min-t 0.0\
-    --cfg-max-t 0.8\
-    --bootstrap-ratio 0.
+    --cfg-max-t 0.8
 
 ```
 Each configuration is optimized for different model sizes according to the original paper's settings.
@@ -243,10 +243,6 @@ torchrun --nproc_per_node=8 --nnodes=1 evaluate.py \
     --fid-statistics-file "./fid_stats/adm_in256_stats.npz"
 ```
 This evaluation performs distributed sampling across 8 GPUs to generate 50,000 high-quality samples for robust FID computation. The framework validates MeanFlow's single-step generation capability (num-steps=1) and computes FID scores against pre-computed ImageNet statistics.
-
-**Notes**: 
-1. When evaluating models trained with CFG , the --cfg-scale parameter must be set to 1.0 during inference, as the CFG guidance has been incorporated into the model during training and is no longer controllable at sampling time.
-2. We currently use [sd-vae-ft-ema](https://huggingface.co/stabilityai/sd-vae-ft-mse), which is not the suggested tokenizer in original paper ([sd-vae-ft-mse](https://huggingface.co/pcuenq/sd-vae-ft-mse-flax)).
 
 ## Acknowledgements
 

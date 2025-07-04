@@ -140,8 +140,7 @@ def main(args):
         cfg_omega=args.cfg_omega,
         cfg_kappa=args.cfg_kappa,
         cfg_min_t=args.cfg_min_t,
-        cfg_max_t=args.cfg_max_t,
-        bootstrap_ratio=args.bootstrap_ratio
+        cfg_max_t=args.cfg_max_t
     )
     if accelerator.is_main_process:
         logger.info(f"SiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -335,7 +334,6 @@ def parse_args(input_args=None):
     parser.add_argument("--cfg-kappa", type=float, default=0.0, help="CFG kappa param for mixing")
     parser.add_argument("--cfg-min-t", type=float, default=0.0, help="Minum time for cfg trigger")
     parser.add_argument("--cfg-max-t", type=float, default=1.0, help="Maxium time for cfg trigger")
-    parser.add_argument("--bootstrap-ratio", type=float, default=0.75, help="Ratio of EMA gt")
     
     if input_args is not None:
         args = parser.parse_args(input_args)
