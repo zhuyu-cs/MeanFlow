@@ -151,12 +151,13 @@ class SiT(nn.Module):
         use_cfg=False,
         z_dims=[768],
         projector_dim=2048,
+        finetune=False,
         **block_kwargs # fused_attn
     ):
         super().__init__()
         self.path_type = path_type
         self.in_channels = in_channels
-        self.out_channels = in_channels
+        self.out_channels = in_channels*2 if finetune else in_channels
         self.patch_size = patch_size
         self.num_heads = num_heads
         self.use_cfg = use_cfg

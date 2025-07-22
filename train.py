@@ -119,6 +119,7 @@ def main(args):
         input_size=latent_size,
         num_classes=args.num_classes,
         use_cfg = (args.cfg_prob > 0),
+        finetune=True if args.finetune is not None else False,
         **block_kwargs
     )
 
@@ -178,6 +179,11 @@ def main(args):
     model.train()  # important! This enables embedding dropout for classifier-free guidance
     ema.eval()  # EMA model should always be in eval mode
     
+    if args.finetune is not None:
+        ckpt = torch.load(args.finetune, map_location='cpu')
+        model.load_state_dict(ckpt, strict=False)
+        ema.load_state_dict(ckpt, strict=False)
+
     # resume:
     global_step = 0
     if args.resume_step > 0:
@@ -313,7 +319,7 @@ def parse_args(input_args=None):
     parser.add_argument("--adam-weight-decay", type=float, default=0., help="Weight decay to use.")
     parser.add_argument("--adam-epsilon", type=float, default=1e-08, help="Epsilon value for the Adam optimizer")
     parser.add_argument("--max-grad-norm", default=1.0, type=float, help="Max gradient norm.")
-
+    parser.add_argument("--finetune", default=None, type=str, help="finetune pretrained weight")
     # seed
     parser.add_argument("--seed", type=int, default=0)
 
