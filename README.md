@@ -56,7 +56,7 @@ accelerate launch --multi_gpu \
     --resolution 256 \
     --batch-size 256 \
     --allow-tf32 \
-    --mixed-precision "bf16" \
+    --mixed-precision "fp32" \
     --epochs 80\
     --path-type "linear" \
     --weighting "adaptive" \
