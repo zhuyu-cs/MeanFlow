@@ -219,8 +219,8 @@ class SILoss:
         loss_mid = torch.sum((error**2).reshape(error.shape[0],-1), dim=-1)
         # Apply adaptive weighting based on configuration
         if self.weighting == "adaptive":
-            weights = 1.0 / (loss_mid.detach() ** 2 + 1e-3).pow(self.adaptive_p)
-            loss = weights * loss_mid ** 2          
+            weights = 1.0 / (loss_mid.detach() + 1e-3).pow(self.adaptive_p)
+            loss = weights * loss_mid          
         else:
             loss = loss_mid
         loss_mean_ref = torch.mean((error**2))
