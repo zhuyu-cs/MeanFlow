@@ -37,21 +37,35 @@ def center_crop_arr(pil_image, image_size):
 
 class LMDBImageNetReader(torch.utils.data.Dataset):
     def __init__(self, lmdb_path, transform=None):
-        self.env = lmdb.open(lmdb_path, 
-                            readonly=True,
-                            lock=False,
-                            readahead=False,
-                            meminit=False)
-        
-        with self.env.begin() as txn:
-            self.length = int(txn.get('num_samples'.encode()).decode())
-        
+        self.lmdb_path = lmdb_path
         self.transform = transform
+        self.env = None  # Will be lazily initialized per-worker
+        
+        # Read length using a temporary connection (closed immediately)
+        tmp_env = lmdb.open(lmdb_path, 
+                           readonly=True,
+                           lock=False,
+                           readahead=False,
+                           meminit=False)
+        with tmp_env.begin() as txn:
+            self.length = int(txn.get('num_samples'.encode()).decode())
+        tmp_env.close()
+    
+    def _init_env(self):
+        """Lazily initialize LMDB environment (called once per worker process)."""
+        if self.env is None:
+            self.env = lmdb.open(self.lmdb_path, 
+                                readonly=True,
+                                lock=False,
+                                readahead=False,
+                                meminit=False)
     
     def __len__(self):
         return self.length
     
     def __getitem__(self, index):
+        self._init_env()  # Ensure env is initialized in this worker
+        
         with self.env.begin() as txn:
             data = txn.get(f'{index}'.encode())
             if data is None:
@@ -109,6 +123,9 @@ def preprocess_latents(args):
     local_rank = int(os.environ["LOCAL_RANK"])
     rank = int(os.environ["RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
+    
+    # Initialize distributed process group
+    dist.init_process_group(backend="nccl")
     
     device = torch.device(f"cuda:{local_rank}")
     torch.cuda.set_device(device)
@@ -211,6 +228,10 @@ def preprocess_latents(args):
                     print("LMDB environment closed successfully")
             except Exception as e:
                 print(f"Process {rank} error closing LMDB: {e}")
+        
+        # Clean up distributed process group
+        if dist.is_initialized():
+            dist.destroy_process_group()
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Preprocess ImageNet to VAE latents')
