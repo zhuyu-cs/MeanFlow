@@ -204,7 +204,7 @@ def main(args):
     )
     # here is a trick from IMM. https://github.com/lumalabs/imm/blob/main/training/encoders.py
     latents_scale = torch.tensor(
-        [0.18125, 0.18125, 0.18125, 0.18125]
+        [0.18215, 0.18215, 0.18215, 0.18215]
         ).view(1, 4, 1, 1).to(device)
     latents_bias = torch.tensor(
         [0., 0., 0., 0.]
